@@ -353,6 +353,8 @@ int
 nfs_mount(struct nfs_context *nfs, const char *server, const char *export)
 {
         int ret;
+        char *error_string;
+
         ret = _nfs_mount(nfs, server, export);
 
         /*
@@ -366,7 +368,19 @@ nfs_mount(struct nfs_context *nfs, const char *server, const char *export)
                 rpc_disconnect(nfs->rpc, "disconnect to try different dialect");
                 ret = _nfs_mount(nfs, server, export);
         }
-        nfs_set_error(nfs, "%s", rpc_get_error(nfs->rpc));
+
+        /*
+         * Copy the RPC error to the NFS error if the mount failed for an
+         * RPC-related reason (e.g connection rejected) and set the RPC error.
+         * If mount failed for a non-RPC reason (e.g ENOENT for export path)
+         * then leave the NFS error intact. Note that the return value from
+         * _nfs_mount will have any RPC_STATUS_* values translated to -errno
+         * which is less reliable that checking whether RPC error is empty.
+         */
+        error_string = rpc_get_error(nfs->rpc);
+        if (error_string && error_string[0]) {
+            nfs_set_error(nfs, "%s", error_string);
+        }
 
         return ret;
 }
